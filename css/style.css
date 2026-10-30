@@ -130,8 +130,6 @@ body.map-page .site-footer { display: none; }
 .info-grid dt { color: var(--muted); } .info-grid dd { margin: 0; font-weight: 600; }
 .tag { display: inline-block; padding: .05em .6em; border-radius: 999px; font-size: .78rem; font-weight: 700; color: #fff; background: var(--muted); }
 .tag.ok { background: var(--green); } .tag.warn { background: var(--orange); } .tag.bad { background: #c0392b; }
-.plan-ask { background: #fff7ea; border: 1.5px dashed var(--orange); border-radius: 10px; padding: .8rem; margin-top: .8rem; font-size: .9rem; }
-.plan-ask .row { display: flex; gap: .5rem; margin-top: .5rem; }
 #map { flex: 1; min-width: 0; }
 .legend { position: absolute; right: 12px; bottom: 28px; z-index: 1000; background: #fff; border-radius: 10px; padding: .6rem .8rem; box-shadow: var(--shadow); font-size: .8rem; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: .4em; vertical-align: middle; }

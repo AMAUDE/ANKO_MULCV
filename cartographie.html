@@ -175,12 +175,9 @@ function showInfo(id) {
       <dt>Caractéristiques</dt><dd style="font-weight:400">${[l.conforme ? "conforme" : "non conforme", l.habite ? "habité" : "non habité", l.milieu, l.conflit ? "en conflit" : "", l.actes ? "avec actes" : ""].filter(Boolean).join(" · ")}</dd>
     </dl>
     <div id="plan-zone">${planOK
-      ? `<div class="plan-ask" id="plan-ask"><b>Plan de lotissement géoréférencé</b><br>Voulez-vous voir le plan source de ce lotissement ?<div class="row"><button class="btn small green" id="plan-yes">Oui</button><button class="btn small ghost" id="plan-no">Non</button></div></div>`
+      ? `<button class="btn" id="plan-btn" style="margin-top:.8rem">Voir le plan</button>`
       : `<p class="empty" style="padding:.8rem 0 0">${l.sur_carte ? "Plan non disponible." : "Ce lotissement n'est pas encore sur la carte."}</p>`}</div>`;
-  if (planOK) {
-    $("plan-yes").onclick = () => { $("plan-ask").outerHTML = '<button class="btn" id="plan-btn" style="margin-top:.8rem">Voir le plan de lotissement</button>'; $("plan-btn").onclick = () => openPlan(l); openPlan(l); };
-    $("plan-no").onclick = () => { $("plan-ask").remove(); clearPlanOverlay(); };
-  }
+  if (planOK) $("plan-btn").onclick = () => openPlan(l);
 }
 
 function planLayer(l, opacity) {
