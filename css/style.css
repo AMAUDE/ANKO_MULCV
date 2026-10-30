@@ -109,7 +109,12 @@ body.map-page .site-footer { display: none; }
 .filterbar { background: #fff; border-bottom: 1px solid var(--line); padding: .5rem 4%; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; z-index: 1500; }
 .filterbar select { min-width: 150px; flex: 1 1 140px; max-width: 220px; padding: .4em .5em; font-size: .9rem; }
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; padding: .4rem 4%; background: #fff; border-bottom: 1px solid var(--line); }
-.side .chips { padding: 0; border: 0; background: none; }
+.side .chips { padding: 0; border: 0; background: none; display: block; }
+.dd { border: 1.5px solid var(--line); border-radius: 8px; background: #fff; }
+.dd summary { padding: .5em .7em; cursor: pointer; font-weight: 400; color: var(--ink); }
+.dd[open] summary { border-bottom: 1px solid var(--line); }
+.dd-list { display: grid; grid-template-columns: 1fr 1fr; gap: .1rem .6rem; padding: .5rem .7rem; font-size: .9rem; }
+.dd-list label { display: flex; align-items: center; gap: .4rem; padding: .25rem 0; cursor: pointer; }
 .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: .2em .7em; font-size: .82rem; cursor: pointer; display: inline-flex; align-items: center; gap: .4em; user-select: none; color: var(--ink); }
 .chip b { background: var(--bg); border-radius: 999px; padding: 0 .5em; font-size: .78rem; color: var(--navy); }
 .chip.on { background: var(--navy); border-color: var(--navy); color: #fff; } .chip.on b { background: var(--orange); color: #fff; }

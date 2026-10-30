@@ -98,15 +98,18 @@ function renderFilters() {
   });
 }
 
+let ddOpen = false;
 function renderChips() {
-  const g = geoRows(P.f);   // les compteurs suivent la zone choisie, avant meme de lancer la recherche
-  $("chips").innerHTML = '<span style="font-size:.82rem;color:var(--muted);flex-basis:100%">Nombre de lotissements dans la zone choisie :</span>' + ANKO.criteria.map(([k, t, fn]) =>
-    `<span class="chip ${P.chips.has(k) ? "on" : ""}" data-k="${k}" role="button" tabindex="0">${t}<b>${g.filter(fn).length}</b></span>`).join("") +
-    '<button class="btn small" id="c-go" style="flex-basis:100%;justify-content:center;margin-top:.3rem">🔍 Rechercher</button>';
+  const n = P.chips.size;
+  $("chips").innerHTML = `<details class="dd" ${ddOpen ? "open" : ""}><summary>${n ? n + " critère(s) choisi(s)" : "Tous les critères"}</summary><div class="dd-list">` +
+    ANKO.criteria.map(([k, t]) => `<label><input type="checkbox" data-k="${k}" ${P.chips.has(k) ? "checked" : ""}> ${t}</label>`).join("") + '</div></details>' +
+    '<button class="btn small" id="c-go" style="width:100%;justify-content:center;margin-top:.6rem">🔍 Rechercher</button>';
   $("c-go").onclick = applyFilters;
-  document.querySelectorAll(".chip").forEach((c) => {
-    const go = () => { const k = c.dataset.k; if (P.chips.has(k)) P.chips.delete(k); else { P.chips.add(k); if (PAIRS[k]) P.chips.delete(PAIRS[k]); } renderChips(); };
-    c.onclick = go; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), go());
+  document.querySelector("#chips details").ontoggle = (e) => { ddOpen = e.target.open; };
+  document.querySelectorAll("#chips input").forEach((c) => c.onchange = () => {
+    const k = c.dataset.k;
+    if (c.checked) { P.chips.add(k); if (PAIRS[k]) P.chips.delete(PAIRS[k]); } else P.chips.delete(k);   // critères opposés : exclusifs
+    ddOpen = true; renderChips();
   });
 }
 
