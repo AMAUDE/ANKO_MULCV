@@ -66,18 +66,24 @@ L.control.layers({ "Plan": osm, "Satellite": sat }, null, { position: "topright"
 const gMarkers = L.layerGroup().addTo(map), gOutline = L.layerGroup().addTo(map), gDetail = L.layerGroup().addTo(map);
 
 /* ---------- filtrage ---------- */
-const geoRows = () => S.L.filter((l) => LEVELS.every(([k]) => !S.f[k] || (k === "lotissement" ? l.id === S.f[k] : l[k] === S.f[k])));
+/* S = filtres appliques a la carte ; P = choix en cours (appliques au clic sur « Rechercher ») */
+const P = { f: { ...S.f }, chips: new Set() };
+const geoRows = (f = S.f) => S.L.filter((l) => LEVELS.every(([k]) => !f[k] || (k === "lotissement" ? l.id === f[k] : l[k] === f[k])));
 const visibleRows = () => geoRows().filter((l) => [...S.chips].every((c) => ANKO.criteria.find((x) => x[0] === c)[2](l)));
+const setZone = (f, chips = []) => { S.f = { ...f }; S.chips = new Set(chips); P.f = { ...f }; P.chips = new Set(chips); };
+const applyFilters = () => { setZone(P.f, P.chips); select(null); refresh(true); };
 
 function renderFilters() {
   const bar = $("filterbar");
   if (!bar.dataset.ready) {
-    bar.innerHTML = LEVELS.map(([k, t]) => `<select id="f-${k}" aria-label="${t}"></select>`).join("") + '<button class="btn ghost small" id="f-reset">Réinitialiser</button>';
+    bar.innerHTML = LEVELS.map(([k, t]) => `<select id="f-${k}" aria-label="${t}"></select>`).join("") +
+      '<button class="btn small" id="f-go">🔍 Rechercher</button><button class="btn ghost small" id="f-reset">Réinitialiser</button>';
     LEVELS.forEach(([k], i) => $("f-" + k).onchange = (e) => {
-      S.f[k] = e.target.value; LEVELS.slice(i + 1).forEach(([d]) => S.f[d] = "");
-      renderFilters(); refresh(true);
+      P.f[k] = e.target.value; LEVELS.slice(i + 1).forEach(([d]) => P.f[d] = "");
+      renderFilters(); renderChips();
     });
-    $("f-reset").onclick = () => { LEVELS.forEach(([k]) => S.f[k] = ""); S.chips.clear(); select(null); renderFilters(); refresh(true); };
+    $("f-go").onclick = applyFilters;
+    $("f-reset").onclick = () => { setZone({ district: "", region: "", departement: "", sous_prefecture: "", localite: "", lotissement: "" }); select(null); renderFilters(); refresh(true); };
     bar.dataset.ready = 1;
   }
   let rows = S.L;
@@ -87,17 +93,19 @@ function renderFilters() {
       ? rows.map((l) => [l.id, l.nom]).sort((a, b) => a[1].localeCompare(b[1], "fr"))
       : [...new Set(rows.map((l) => l[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr")).map((v) => [v, v]);
     sel.innerHTML = `<option value="">${t} (tous)</option>` + vals.map(([v, n]) => `<option value="${ANKO.esc(v)}">${ANKO.esc(n)}</option>`).join("");
-    sel.value = S.f[k] || "";
-    if (S.f[k]) rows = rows.filter((l) => (k === "lotissement" ? l.id : l[k]) === S.f[k]);
+    sel.value = P.f[k] || "";
+    if (P.f[k]) rows = rows.filter((l) => (k === "lotissement" ? l.id : l[k]) === P.f[k]);
   });
 }
 
 function renderChips() {
-  const g = geoRows();
+  const g = geoRows(P.f);   // les compteurs suivent la zone choisie, avant meme de lancer la recherche
   $("chips").innerHTML = '<span style="font-size:.82rem;color:var(--muted);align-self:center">Dans cette zone :</span>' + ANKO.criteria.map(([k, t, fn]) =>
-    `<span class="chip ${S.chips.has(k) ? "on" : ""}" data-k="${k}" role="button" tabindex="0">${t}<b>${g.filter(fn).length}</b></span>`).join("");
+    `<span class="chip ${P.chips.has(k) ? "on" : ""}" data-k="${k}" role="button" tabindex="0">${t}<b>${g.filter(fn).length}</b></span>`).join("") +
+    '<button class="btn small" id="c-go" style="margin-left:auto">🔍 Rechercher</button>';
+  $("c-go").onclick = applyFilters;
   document.querySelectorAll(".chip").forEach((c) => {
-    const go = () => { const k = c.dataset.k; if (S.chips.has(k)) S.chips.delete(k); else { S.chips.add(k); if (PAIRS[k]) S.chips.delete(PAIRS[k]); } refresh(true); };
+    const go = () => { const k = c.dataset.k; if (P.chips.has(k)) P.chips.delete(k); else { P.chips.add(k); if (PAIRS[k]) P.chips.delete(PAIRS[k]); } renderChips(); };
     c.onclick = go; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), go());
   });
 }
@@ -212,8 +220,8 @@ function select(id, fit) {
 
 function goToLot(lotissementId, ilot, lot) {
   const l = S.L.find((x) => x.id === lotissementId); if (!l) return;
-  LEVELS.forEach(([k]) => S.f[k] = k === "lotissement" ? l.id : l[k]);
-  S.chips.clear(); renderFilters(); refresh(false); select(l.id, false);
+  setZone(Object.fromEntries(LEVELS.map(([k]) => [k, k === "lotissement" ? l.id : l[k]])));
+  renderFilters(); refresh(false); select(l.id, false);
   const f = S.lots.find((x) => x.properties.lotissement_id === l.id && x.properties.ilot == ilot && x.properties.lot == lot);
   if (!f) { map.fitBounds(l.plan_bounds || [l.centre, l.centre], { maxZoom: 19 }); return; }
   const ring = f.geometry.coordinates[0], lats = ring.map((p) => p[1]), lngs = ring.map((p) => p[0]);
@@ -250,8 +258,8 @@ function search() {
 }
 function goToLotiss(id) {
   const l = S.L.find((x) => x.id === id);
-  LEVELS.forEach(([k]) => S.f[k] = k === "lotissement" ? l.id : l[k]);
-  S.chips.clear(); renderFilters(); refresh(false); select(id, true);
+  setZone(Object.fromEntries(LEVELS.map(([k]) => [k, k === "lotissement" ? l.id : l[k]])));
+  renderFilters(); refresh(false); select(id, true);
   if (!l.sur_carte) map.setView(l.centre, 13);
 }
 $("s-type").onchange = search; $("s-q").oninput = search;
