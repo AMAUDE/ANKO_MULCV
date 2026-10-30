@@ -1,0 +1,5 @@
+*.pdf -text
+*.docx -text
+*.dwg -text
+*.png binary
+*.jpg binary
