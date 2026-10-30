@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANKO – Plateforme de cartographie foncière</title>
+<meta name="description" content="ANKO : plateforme de cartographie dédiée à la modernisation des lotissements en Côte d'Ivoire.">
+<link rel="icon" href="assets/logos/mulcv.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="site-header"></div>
+
+<section class="hero">
+  <div id="hero-icons"></div>
+  <div class="container inner">
+    <h1><span class="k">ANKO</span><br>Cartographie foncière</h1>
+    <p class="lead">La plateforme qui rassemble, localise et valorise les lotissements de Côte d'Ivoire pour une gestion foncière moderne, transparente et accessible à tous.</p>
+    <div class="cta">
+      <a class="btn" href="cartographie.html">Explorer la carte</a>
+      <a class="btn ghost" style="color:#fff;border-color:#fff" href="dashboard.html">Voir les statistiques</a>
+    </div>
+  </div>
+</section>
+
+<div class="container">
+  <div class="stats-strip" id="stats"></div>
+</div>
+
+<section class="block">
+  <div class="container">
+    <div class="section-title">
+      <h2>Pourquoi ANKO ?</h2>
+      <p>La modernisation des lotissements est un levier majeur de sécurisation foncière et de planification urbaine en Côte d'Ivoire.</p>
+    </div>
+    <div class="cards">
+      <div class="card"><h3>Sécuriser le foncier</h3><p>Chaque lotissement est relié à son arrêté, à son plan géoréférencé et à ses actes, pour réduire les litiges et les doubles attributions.</p></div>
+      <div class="card"><h3>Centraliser les données</h3><p>Les données de la DTC, de la DMISSA, de la DUDU et du Secteur MULCV sont réunies en un seul endroit, consultable par tous.</p></div>
+      <div class="card"><h3>Aider à décider</h3><p>Des tableaux de bord par district, région, département et localité éclairent les décisions des autorités et des aménageurs.</p></div>
+      <div class="card"><h3>Rendre l'information publique</h3><p>Rechercher un lot, un îlot, un lotissement ou un demandeur et consulter le plan source, sans se déplacer.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <div class="section-title"><h2>Les pages de la plateforme</h2></div>
+    <div class="cards">
+      <div class="card"><h3><a href="activites.html">Présentation des activités</a></h3><p>Les séances de travail menées et les données reçues de chaque direction.</p></div>
+      <div class="card"><h3><a href="cartographie.html">Cartographie</a></h3><p>Carte interactive, recherche et filtres par localité et par statut.</p></div>
+      <div class="card"><h3><a href="dashboard.html">Tableau de bord</a></h3><p>Statistiques, liste des lotissements et base des actes fonciers.</p></div>
+      <div class="card"><h3><a href="bibliotheque.html">Bibliothèque</a></h3><p>Catalogue des données physiques et numériques de chaque direction.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <div class="section-title"><h2>Les structures du projet</h2><p>Les institutions et entreprises engagées dans la construction de la plateforme.</p></div>
+    <div class="partners" id="partners"></div>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<script src="js/common.js"></script>
+<script>
+(async () => {
+  const cfg = await ANKO.init("index.html");
+  document.getElementById("hero-icons").outerHTML = ANKO.floatIcons(["gps", "qgis", "shp", "topo", "deci", "pc"]);
+  document.getElementById("partners").innerHTML = (cfg.partenaires || []).map((p) =>
+    `<div class="partner"><img src="${ANKO.esc(p.logo)}" alt="Logo ${ANKO.esc(p.sigle)}"><h3>${ANKO.esc(p.nom)}</h3><small>${ANKO.esc(p.role)}</small></div>`).join("");
+  try {
+    const L = await ANKO.load("data/lotissements.json");
+    const loc = new Set(L.map((l) => l.localite)).size;
+    const lots = L.reduce((s, l) => s + (l.nb_lots || 0), 0);
+    const items = [[L.length, "lotissements"], [loc, "localités"], [lots.toLocaleString("fr-FR"), "lots"], [L.filter((l) => l.etat === "approuvé").length, "lotissements approuvés"]];
+    document.getElementById("stats").innerHTML = items.map(([n, t]) => `<div class="stat"><b>${n}</b><span>${t}</span></div>`).join("");
+  } catch (e) { console.error(e); }
+})();
+</script>
+</body>
+</html>

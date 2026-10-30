@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bibliothèque – ANKO</title>
+<link rel="icon" href="assets/logos/mulcv.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="site-header"></div>
+<div class="page-head"><div class="container"><h1>Bibliothèque de données</h1><p>Catalogue des données fournies par chaque direction, en fichiers physiques et numériques.</p></div></div>
+
+<main class="container" style="padding-top:1.4rem">
+  <div class="tabs" id="tabs"></div>
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="Rechercher dans le catalogue de cette direction…">
+    <select id="dr" hidden></select>
+  </div>
+  <div class="folders" id="folders"></div>
+</main>
+
+<div id="site-footer"></div>
+<script src="js/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let B = {}, cur = "dtc";
+const EXT = { pdf: "PDF", word: "Word", dwg: "DWG" };
+
+const inDr = (it) => $("dr").hidden || !$("dr").value || !it.direction || it.direction === $("dr").value;
+function physList(items, q) {
+  const r = items.filter((i) => inDr(i) && (!q || ANKO.norm(`${i.titre} ${i.reference} ${i.localisation}`).includes(q)));
+  return { n: r.length, html: r.map((i) => `<li><div><b>${ANKO.esc(i.titre)}</b><small>Réf. ${ANKO.esc(i.reference)} · ${i.annee} · ${ANKO.esc(i.localisation)}</small></div></li>`).join("") || '<li class="empty">Aucun élément.</li>' };
+}
+function numList(items, q) {
+  const r = items.filter((i) => inDr(i) && (!q || ANKO.norm(i.titre).includes(q)));
+  return { n: r.length, html: r.map((i) => `<li><div><b>${ANKO.esc(i.titre)}</b><small>${ANKO.fmtDate(i.date)} · ${ANKO.fmtSize(i.taille || 0)}</small></div><a class="btn small green" href="${ANKO.esc(i.fichier)}" download>Télécharger</a></li>`).join("") || '<li class="empty">Aucun fichier.</li>' };
+}
+function draw() {
+  const d = B[cur]; if (!d) { $("folders").innerHTML = '<p class="empty">Aucune donnée pour cette direction.</p>'; return; }
+  const q = ANKO.norm($("q").value);
+  const sec = (title, parts) => `<div class="folder"><h3>${title}</h3>${parts.map(([t, o, open]) => `<details ${open || q ? "open" : ""}><summary>${t}<span class="count">${o.n}</span></summary><ul>${o.html}</ul></details>`).join("")}</div>`;
+  const p = d.physique || {}, n = d.numerique || {};
+  $("folders").innerHTML =
+    sec("📁 Fichiers physiques", [["Documents", physList(p.documents || [], q), 1], ["Cartes", physList(p.cartes || [], q)]]) +
+    sec("💾 Fichiers numériques", [["PDF", numList(n.pdf || [], q), 1], ["Word", numList(n.word || [], q)], ["DWG", numList(n.dwg || [], q)]]);
+}
+function setSource(k) {
+  cur = k;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.k === k));
+  $("dr").hidden = k !== "secteur"; draw();
+}
+(async () => {
+  const cfg = await ANKO.init("bibliotheque.html");
+  B = await ANKO.load("data/bibliotheque.json").catch(() => ({}));
+  const keys = Object.keys(cfg.sources);
+  $("tabs").innerHTML = keys.map((k) => `<button class="tab" data-k="${k}">${ANKO.esc(cfg.sources[k].label)}</button>`).join("");
+  document.querySelectorAll(".tab").forEach((t) => t.onclick = () => setSource(t.dataset.k));
+  $("dr").innerHTML = '<option value="">Toutes les directions</option>' + (cfg.directions_secteur || []).map((d) => `<option>${ANKO.esc(d)}</option>`).join("");
+  $("dr").onchange = draw; $("q").oninput = draw;
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("dr")) $("dr").value = qs.get("dr");
+  setSource(keys.includes(qs.get("source")) ? qs.get("source") : keys[0]);
+})();
+</script>
+</body>
+</html>

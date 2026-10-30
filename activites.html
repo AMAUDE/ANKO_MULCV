@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Présentation des activités – ANKO</title>
+<link rel="icon" href="assets/logos/mulcv.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="site-header"></div>
+
+<section class="hero activites">
+  <div id="hero-icons"></div>
+  <div class="container inner">
+    <h1>Cartographie<br>foncière</h1>
+    <p class="lead">Du terrain au décideur : relevés GPS, traitements SIG, tableurs et dossiers, toute la chaîne qui modernise le foncier urbain.</p>
+  </div>
+</section>
+
+<section class="block" id="seances" style="margin-top:-8rem;position:relative;z-index:3">
+  <div class="container">
+    <div class="section-title" style="color:#fff"><h2 style="background:none;color:#fff;border-bottom-color:var(--orange)">Séances de travail</h2></div>
+    <div class="timeline" id="timeline"></div>
+  </div>
+</section>
+
+<section class="block" id="data">
+  <div class="container">
+    <div class="section-title"><h2>Données reçues</h2><p>Les données sources reçues de chaque structure.</p></div>
+    <div id="secteur-filter" style="display:none;text-align:center;margin-bottom:1rem">
+      <label>Filtrer le Secteur MULCV par direction : <select id="dr"></select></label>
+    </div>
+    <div class="cards" id="sources"></div>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<script src="js/common.js"></script>
+<script>
+(async () => {
+  const cfg = await ANKO.init("activites.html");
+  document.getElementById("hero-icons").outerHTML = ANKO.floatIcons(["gps", "qgis", "pc", "shp", "xls", "doc", "deci", "topo"]);
+
+  /* seances */
+  try {
+    const S = (await ANKO.load("data/seances.json")).sort((a, b) => b.date.localeCompare(a.date));
+    document.getElementById("timeline").innerHTML = S.map((s) => `
+      <article class="t-item">
+        <div class="t-date">${ANKO.fmtDate(s.date)} · ${ANKO.esc(s.lieu)}</div>
+        <h3>${ANKO.esc(s.titre)}</h3><p>${ANKO.esc(s.description)}</p>
+        <div class="gallery">${(s.images || []).map((i) => `<img loading="lazy" src="${ANKO.esc(i.src)}" alt="${ANKO.esc(i.legende)}" data-l="${ANKO.esc(i.legende)}">`).join("")}</div>
+      </article>`).join("");
+    document.querySelectorAll(".gallery img").forEach((im) => im.onclick = () => ANKO.lightbox(im.src, im.dataset.l));
+  } catch (e) { document.getElementById("timeline").innerHTML = '<p class="empty">Aucune séance enregistrée.</p>'; }
+
+  /* donnees par source */
+  const L = await ANKO.load("data/lotissements.json").catch(() => []);
+  const drs = cfg.directions_secteur || [];
+  const sel = document.getElementById("dr");
+  sel.innerHTML = '<option value="">Toutes les directions</option>' + drs.map((d) => `<option>${ANKO.esc(d)}</option>`).join("");
+  const render = () => {
+    document.getElementById("sources").innerHTML = Object.entries(cfg.sources).map(([k, s]) => {
+      let n = s.nb_lotissements, extra = "";
+      if (k === "secteur") {
+        document.getElementById("secteur-filter").style.display = "block";
+        if (sel.value) { n = L.filter((l) => l.source === "SECTEUR" && l.direction_secteur === sel.value).length; extra = ` (${ANKO.esc(sel.value)})`; }
+      }
+      const q = k === "secteur" && sel.value ? "&dr=" + encodeURIComponent(sel.value) : "";
+      return `<div class="source-card" style="--c:${s.couleur}">
+        <div class="head"><img src="${ANKO.esc(s.logo)}" alt=""><h3 style="margin:0">${ANKO.esc(s.label)}</h3></div>
+        <div class="big">${Number(n).toLocaleString("fr-FR")}</div>
+        <p style="margin:0">Avec ${k === "secteur" ? "le" : "la"} ${ANKO.esc(s.label)}${extra}, c'est plus de <b>${Number(n).toLocaleString("fr-FR")} lotissements</b> répartis sur l'ensemble du territoire.</p>
+        <a class="btn small" href="bibliotheque.html?source=${k}${q}">Plus de détail →</a></div>`;
+    }).join("");
+  };
+  sel.onchange = render; render();
+})();
+</script>
+</body>
+</html>

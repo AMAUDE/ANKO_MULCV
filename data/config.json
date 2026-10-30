@@ -1,0 +1,20 @@
+{
+  "nom": "ANKO",
+  "sous_titre": "Plateforme de cartographie foncière pour la modernisation des lotissements en Côte d'Ivoire",
+  "ministere": "Ministère de la Construction, du Logement et de l'Urbanisme (MULCV)",
+  "sources": {
+    "dtc":     { "sigle": "DTC",    "label": "DTC",           "nb_lotissements": 513, "logo": "assets/logos/dtc.svg",    "couleur": "#009E60" },
+    "dmissa":  { "sigle": "DMISSA", "label": "DMISSA",        "nb_lotissements": 342, "logo": "assets/logos/dmissa.svg", "couleur": "#0B3C6B" },
+    "dudu":    { "sigle": "DUDU",   "label": "DUDU",          "nb_lotissements": 218, "logo": "assets/logos/dudu.svg",   "couleur": "#C45A00" },
+    "secteur": { "sigle": "SECTEUR","label": "Secteur MULCV", "nb_lotissements": 126, "logo": "assets/logos/secteur.svg","couleur": "#7A2E8E" }
+  },
+  "directions_secteur": ["DR Abidjan", "DR Bouaké", "DR Daloa", "DR San-Pédro", "DR Korhogo", "DR Man", "DR Yamoussoukro"],
+  "partenaires": [
+    { "nom": "Ministère de la Construction, du Logement et de l'Urbanisme", "sigle": "MULCV",  "role": "Maître d'ouvrage",            "logo": "assets/logos/mulcv.svg" },
+    { "nom": "DTC",                                                        "sigle": "DTC",   "role": "Fournisseur de données",      "logo": "assets/logos/dtc.svg" },
+    { "nom": "DMISSA",                                                      "sigle": "DMISSA", "role": "Fournisseur de données",      "logo": "assets/logos/dmissa.svg" },
+    { "nom": "DUDU",                                                        "sigle": "DUDU",   "role": "Fournisseur de données",      "logo": "assets/logos/dudu.svg" },
+    { "nom": "Secteur MULCV",                                               "sigle": "SMC",    "role": "Directions régionales",       "logo": "assets/logos/secteur.svg" }
+  ],
+  "admin": { "repo_defaut": "", "branche": "main" }
+}

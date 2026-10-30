@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tableau de bord – ANKO</title>
+<link rel="icon" href="assets/logos/mulcv.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="site-header"></div>
+<div class="page-head"><div class="container"><h1>Tableau de bord</h1><p>Statistiques, liste des lotissements et base des actes fonciers.</p></div></div>
+
+<main class="container">
+  <div class="kpis" id="kpis"></div>
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-t="stats">Statistiques</button>
+    <button class="tab" data-t="lotiss">Liste des lotissements</button>
+    <button class="tab" data-t="actes">Base des actes fonciers</button>
+  </div>
+
+  <div id="tab-stats">
+    <div class="panel">
+      <div class="panel-head"><h2>Lotissements par zone</h2>
+        <label>Répartir par <select id="lvl"></select></label></div>
+      <div class="bars" id="bars"></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><div class="panel-head"><h2>Nombre de lotissements selon…</h2></div>
+        <label style="font-size:.88rem">Zone : <select id="zone-lvl"></select> <select id="zone-val"></select></label>
+        <div class="bars" id="crit" style="margin-top:.8rem"></div></div>
+      <div class="panel"><div class="panel-head"><h2>Par source de données</h2></div><div class="bars" id="by-source"></div></div>
+    </div>
+  </div>
+
+  <div id="tab-lotiss" hidden>
+    <div class="panel">
+      <div class="toolbar">
+        <input id="l-q" type="search" placeholder="Rechercher un lotissement, une localité, un arrêté…">
+        <select id="l-src"><option value="">Toutes les sources</option></select>
+        <select id="l-map"><option value="">Sur la carte ou non</option><option value="1">Sur la carte</option><option value="0">Pas sur la carte</option></select>
+      </div>
+      <div class="table-wrap"><table id="t-l"></table></div><div class="pager" id="p-l"></div>
+    </div>
+  </div>
+
+  <div id="tab-actes" hidden>
+    <div class="panel">
+      <div class="toolbar">
+        <input id="a-q" type="search" placeholder="Rechercher par titulaire, n° d'acte, lotissement…">
+        <select id="a-type"><option value="">Tous les types d'acte</option></select>
+      </div>
+      <div class="table-wrap"><table id="t-a"></table></div><div class="pager" id="p-a"></div>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+<script src="js/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let L = [], A = [];
+
+function bars(el, data, max) {
+  const m = max || Math.max(1, ...data.map((d) => d[1]));
+  $(el).innerHTML = data.length ? data.map(([n, v]) => `<div class="bar-row"><span title="${ANKO.esc(n)}">${ANKO.esc(n)}</span><div class="track"><div class="fill" style="width:${(v / m) * 100}%"></div></div><span>${v}</span></div>`).join("") : '<p class="empty">Aucune donnée.</p>';
+}
+const countBy = (rows, key) => { const c = {}; rows.forEach((l) => { const v = typeof key === "function" ? key(l) : l[key]; if (v) c[v] = (c[v] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1]); };
+
+/* table generique : colonnes [[titre, fn(row)->html, sortKey]] */
+function table(id, pagerId, rows, cols, size = 20) {
+  const st = { p: 0, s: null, d: 1 };
+  const draw = () => {
+    let r = [...rows];
+    if (st.s !== null) r.sort((a, b) => { const x = cols[st.s][2](a), y = cols[st.s][2](b); return (x > y ? 1 : x < y ? -1 : 0) * st.d; });
+    const pages = Math.max(1, Math.ceil(r.length / size)); st.p = Math.min(st.p, pages - 1);
+    $(id).innerHTML = `<thead><tr>${cols.map((c, i) => `<th data-i="${i}">${c[0]}${st.s === i ? (st.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead><tbody>${
+      r.slice(st.p * size, st.p * size + size).map((x) => `<tr>${cols.map((c) => `<td>${c[1](x)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">Aucun résultat.</td></tr>`}</tbody>`;
+    $(pagerId).innerHTML = `<span>${r.length} résultat(s)</span><span><button class="btn small ghost" ${st.p ? "" : "disabled"} data-n="-1">←</button> Page ${st.p + 1}/${pages} <button class="btn small ghost" ${st.p < pages - 1 ? "" : "disabled"} data-n="1">→</button></span>`;
+    $(id).querySelectorAll("th").forEach((th) => th.onclick = () => { const i = +th.dataset.i; st.d = st.s === i ? -st.d : 1; st.s = i; draw(); });
+    $(pagerId).querySelectorAll("button").forEach((b) => b.onclick = () => { st.p += +b.dataset.n; draw(); });
+  };
+  draw();
+}
+
+function renderLotiss() {
+  const q = ANKO.norm($("l-q").value), src = $("l-src").value, mp = $("l-map").value;
+  const rows = L.filter((l) => (!src || l.source === src) && (!mp || String(+l.sur_carte) === mp) && (!q || ANKO.norm(`${l.nom} ${l.localite} ${l.num_arrete} ${l.region} ${l.demandeur}`).includes(q)));
+  table("t-l", "p-l", rows, [
+    ["Lotissement", (l) => ANKO.esc(l.nom), (l) => l.nom],
+    ["Source", (l) => ANKO.esc(ANKO.sourceLabel(l.source)), (l) => l.source],
+    ["Localité", (l) => `${ANKO.esc(l.localite)}<br><small>${ANKO.esc(l.region)}</small>`, (l) => l.localite],
+    ["Arrêté", (l) => ANKO.esc(l.num_arrete || "-"), (l) => l.num_arrete],
+    ["État", (l) => ANKO.esc(l.etat), (l) => l.etat],
+    ["Statut", (l) => l.statut === "normal" ? "Normal" : "Régularisation", (l) => l.statut],
+    ["Îlots", (l) => l.nb_ilots, (l) => l.nb_ilots],
+    ["Lots", (l) => l.nb_lots, (l) => l.nb_lots],
+    ["Sur la carte", (l) => l.sur_carte ? `<a class="btn small" href="cartographie.html?lotissement=${l.id}">Voir sur la carte</a>` : "Non", (l) => +l.sur_carte],
+  ]);
+}
+function renderActes() {
+  const q = ANKO.norm($("a-q").value), ty = $("a-type").value;
+  const rows = A.filter((a) => (!ty || a.type_acte === ty) && (!q || ANKO.norm(`${a.titulaire} ${a.num_acte} ${a.lotissement} ${a.type_acte}`).includes(q)));
+  table("t-a", "p-a", rows, [
+    ["N° acte", (a) => ANKO.esc(a.num_acte), (a) => a.num_acte],
+    ["Type", (a) => ANKO.esc(a.type_acte), (a) => a.type_acte],
+    ["Titulaire", (a) => ANKO.esc(a.titulaire), (a) => a.titulaire],
+    ["Date", (a) => ANKO.fmtDate(a.date_acte), (a) => a.date_acte],
+    ["Lotissement", (a) => ANKO.esc(a.lotissement), (a) => a.lotissement],
+    ["Îlot / Lot", (a) => `${a.ilot} / ${a.lot}`, (a) => a.ilot * 1000 + a.lot],
+    ["Superficie", (a) => (a.superficie_m2 || "-") + " m²", (a) => a.superficie_m2],
+    ["", (a) => `<a class="btn small" href="cartographie.html?lotissement=${a.lotissement_id}&ilot=${a.ilot}&lot=${a.lot}">Voir le lot</a>`, () => 0],
+  ]);
+}
+
+function renderStats() {
+  const lv = $("lvl").value;
+  bars("bars", countBy(L, lv));
+  const zl = $("zone-lvl").value, zv = $("zone-val").value;
+  const rows = zv ? L.filter((l) => l[zl] === zv) : L;
+  bars("crit", [...ANKO.criteria, ...ANKO.criteriaExtra].map(([, t, fn]) => [t, rows.filter(fn).length]), Math.max(1, rows.length));
+  bars("by-source", countBy(L, (l) => ANKO.sourceLabel(l.source)));
+}
+
+(async () => {
+  await ANKO.init("dashboard.html");
+  [L, A] = await Promise.all([ANKO.load("data/lotissements.json"), ANKO.load("data/actes.json").catch(() => [])]);
+  const kp = [[L.length, "lotissements", "#F77F00"], [new Set(L.map((l) => l.localite)).size, "localités", "#009E60"], [L.reduce((s, l) => s + l.nb_ilots, 0).toLocaleString("fr-FR"), "îlots", "#0B3C6B"],
+    [L.reduce((s, l) => s + l.nb_lots, 0).toLocaleString("fr-FR"), "lots", "#7A2E8E"], [L.filter((l) => l.sur_carte).length, "sur la carte", "#F77F00"], [A.length, "actes fonciers", "#009E60"]];
+  $("kpis").innerHTML = kp.map(([n, t, c]) => `<div class="kpi" style="--c:${c}"><b>${n}</b><span>${t}</span></div>`).join("");
+
+  const opts = ANKO.levels.map(([k, t]) => `<option value="${k}">${t}</option>`).join("");
+  $("lvl").innerHTML = opts; $("zone-lvl").innerHTML = opts;
+  const fillZone = () => { const k = $("zone-lvl").value; $("zone-val").innerHTML = '<option value="">Toutes</option>' + [...new Set(L.map((l) => l[k]))].filter(Boolean).sort((a, b) => a.localeCompare(b, "fr")).map((v) => `<option>${ANKO.esc(v)}</option>`).join(""); };
+  fillZone();
+  $("lvl").onchange = renderStats; $("zone-val").onchange = renderStats; $("zone-lvl").onchange = () => { fillZone(); renderStats(); };
+  $("l-src").insertAdjacentHTML("beforeend", Object.entries(ANKO.cfg.sources).map(([k, s]) => `<option value="${k.toUpperCase()}">${ANKO.esc(s.label)}</option>`).join(""));
+  $("a-type").insertAdjacentHTML("beforeend", [...new Set(A.map((a) => a.type_acte))].sort().map((t) => `<option>${ANKO.esc(t)}</option>`).join(""));
+  ["l-q", "l-src", "l-map"].forEach((i) => $(i).oninput = renderLotiss);
+  ["a-q", "a-type"].forEach((i) => $(i).oninput = renderActes);
+  document.querySelectorAll(".tab").forEach((b) => b.onclick = () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
+    ["stats", "lotiss", "actes"].forEach((t) => $("tab-" + t).hidden = t !== b.dataset.t);
+  });
+  renderStats(); renderLotiss(); renderActes();
+})();
+</script>
+</body>
+</html>

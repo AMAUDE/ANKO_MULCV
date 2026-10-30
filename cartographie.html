@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartographie – ANKO</title>
+<link rel="icon" href="assets/logos/mulcv.svg">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="map-page">
+<div id="site-header"></div>
+
+<div class="filterbar" id="filterbar" role="search" aria-label="Filtres de localité"></div>
+<div class="chips" id="chips"></div>
+
+<div class="map-layout">
+  <button class="btn small side-toggle" id="side-toggle">☰ Panneau</button>
+  <aside class="side" id="side">
+    <section>
+      <h3>Recherche</h3>
+      <div class="search-row">
+        <select id="s-type" aria-label="Type de recherche">
+          <option value="lotissement">Lotissement</option>
+          <option value="lot">Lot</option>
+          <option value="ilot">Îlot</option>
+          <option value="demandeur">Nom demandeur</option>
+        </select>
+        <input id="s-q" type="search" placeholder="Rechercher…" autocomplete="off">
+      </div>
+      <small id="s-hint" style="color:var(--muted)"></small>
+      <div class="results" id="results"></div>
+    </section>
+    <section id="info"><p class="empty">Sélectionnez un lotissement sur la carte, ou utilisez la recherche et les filtres.</p></section>
+  </aside>
+  <div id="map"></div>
+  <div class="legend">
+    <b>Lotissements</b><br>
+    <i style="background:#009E60"></i>Approuvé<br><i style="background:#F77F00"></i>Non approuvé<br><i style="background:#c0392b"></i>Annulé
+    <div id="count" style="margin-top:.4rem;color:var(--muted)"></div>
+  </div>
+</div>
+
+<div class="modal" id="plan-modal" role="dialog" aria-modal="true" aria-label="Plan de lotissement">
+  <div class="box">
+    <header><h3 id="plan-title">Plan de lotissement</h3><button id="plan-close" aria-label="Fermer">×</button></header>
+    <div class="body"><div id="plan-map"></div>
+      <div class="foot"><label>Transparence du plan <input type="range" id="plan-op" min="0.1" max="1" step="0.05" value="0.85"></label>
+        <span>Plan géoréférencé : source des données de ce lotissement.</span></div></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="js/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const S = { L: [], lots: [], lotiss: [], f: { district: "", region: "", departement: "", sous_prefecture: "", localite: "", lotissement: "" }, chips: new Set(), sel: null, planLayer: null, hl: null };
+const LEVELS = [...ANKO.levels.map(([k, t]) => [k, t]), ["lotissement", "Lotissement"]];
+const PAIRS = { normal: "regul", regul: "normal", conforme: "nonconforme", nonconforme: "conforme", habite: "nonhabite", nonhabite: "habite", urbain: "village", village: "urbain" };
+const COLORS = { "approuvé": "#009E60", "non approuvé": "#F77F00", "annulé": "#c0392b" };
+
+const map = L.map("map", { zoomControl: true, maxZoom: 21 }).setView([7.54, -5.55], 7);
+const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 21, maxNativeZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, attribution: "Imagerie © Esri" });
+L.control.layers({ "Plan": osm, "Satellite": sat }, null, { position: "topright" }).addTo(map);
+const gMarkers = L.layerGroup().addTo(map), gOutline = L.layerGroup().addTo(map), gDetail = L.layerGroup().addTo(map);
+
+/* ---------- filtrage ---------- */
+const geoRows = () => S.L.filter((l) => LEVELS.every(([k]) => !S.f[k] || (k === "lotissement" ? l.id === S.f[k] : l[k] === S.f[k])));
+const visibleRows = () => geoRows().filter((l) => [...S.chips].every((c) => ANKO.criteria.find((x) => x[0] === c)[2](l)));
+
+function renderFilters() {
+  const bar = $("filterbar");
+  if (!bar.dataset.ready) {
+    bar.innerHTML = LEVELS.map(([k, t]) => `<select id="f-${k}" aria-label="${t}"></select>`).join("") + '<button class="btn ghost small" id="f-reset">Réinitialiser</button>';
+    LEVELS.forEach(([k], i) => $("f-" + k).onchange = (e) => {
+      S.f[k] = e.target.value; LEVELS.slice(i + 1).forEach(([d]) => S.f[d] = "");
+      renderFilters(); refresh(true);
+    });
+    $("f-reset").onclick = () => { LEVELS.forEach(([k]) => S.f[k] = ""); S.chips.clear(); select(null); renderFilters(); refresh(true); };
+    bar.dataset.ready = 1;
+  }
+  let rows = S.L;
+  LEVELS.forEach(([k, t]) => {
+    const sel = $("f-" + k);
+    const vals = k === "lotissement"
+      ? rows.map((l) => [l.id, l.nom]).sort((a, b) => a[1].localeCompare(b[1], "fr"))
+      : [...new Set(rows.map((l) => l[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr")).map((v) => [v, v]);
+    sel.innerHTML = `<option value="">${t} (tous)</option>` + vals.map(([v, n]) => `<option value="${ANKO.esc(v)}">${ANKO.esc(n)}</option>`).join("");
+    sel.value = S.f[k] || "";
+    if (S.f[k]) rows = rows.filter((l) => (k === "lotissement" ? l.id : l[k]) === S.f[k]);
+  });
+}
+
+function renderChips() {
+  const g = geoRows();
+  $("chips").innerHTML = '<span style="font-size:.82rem;color:var(--muted);align-self:center">Dans cette zone :</span>' + ANKO.criteria.map(([k, t, fn]) =>
+    `<span class="chip ${S.chips.has(k) ? "on" : ""}" data-k="${k}" role="button" tabindex="0">${t}<b>${g.filter(fn).length}</b></span>`).join("");
+  document.querySelectorAll(".chip").forEach((c) => {
+    const go = () => { const k = c.dataset.k; if (S.chips.has(k)) S.chips.delete(k); else { S.chips.add(k); if (PAIRS[k]) S.chips.delete(PAIRS[k]); } refresh(true); };
+    c.onclick = go; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), go());
+  });
+}
+
+/* ---------- carte ---------- */
+const lotsOf = (id) => S.lots.filter((f) => f.properties.lotissement_id === id);
+function refresh(fit) {
+  renderChips();
+  const rows = visibleRows(), onMap = rows.filter((l) => l.sur_carte);
+  $("count").textContent = `${rows.length} lotissement(s), ${onMap.length} sur la carte`;
+  gMarkers.clearLayers(); gOutline.clearLayers();
+  onMap.forEach((l) => {
+    const c = COLORS[l.etat] || "#555";
+    L.circleMarker(l.centre, { radius: 8, color: "#fff", weight: 2, fillColor: c, fillOpacity: .95 }).bindTooltip(ANKO.esc(l.nom)).on("click", () => select(l.id, true)).addTo(gMarkers);
+  });
+  const ids = new Set(onMap.map((l) => l.id));
+  L.geoJSON({ type: "FeatureCollection", features: S.lotiss.filter((f) => ids.has(f.properties.id)) }, { style: { color: "#0B2545", weight: 2, fillOpacity: .05 }, interactive: false }).addTo(gOutline);
+  drawDetail();
+  if (fit) {
+    const pts = onMap.map((l) => l.centre);
+    if (pts.length > 1) map.fitBounds(pts, { padding: [50, 50], maxZoom: 14 });
+    else if (pts.length === 1) map.setView(pts[0], 17);
+  }
+}
+
+function lotStyle(p) {
+  const base = { color: "#7a4a12", weight: 1, fillOpacity: .5 };
+  if (p.acte) return { ...base, fillColor: "#009E60" };
+  return p.demandeur ? { ...base, fillColor: "#F7B955" } : { ...base, fillColor: "#c9d1da" };
+}
+function lotPopup(p) {
+  return `<b>Îlot ${p.ilot} · Lot ${p.lot}</b><br>Demandeur : ${p.demandeur ? ANKO.esc(p.demandeur) : "<i>non renseigné</i>"}<br>Superficie : ${p.superficie_m2} m²<br>Acte : ${p.acte ? ANKO.esc(p.acte) : "aucun"}`;
+}
+function drawDetail() {
+  gDetail.clearLayers();
+  if (map.getZoom() < 16) return;
+  const ids = new Set(visibleRows().filter((l) => l.sur_carte).map((l) => l.id)), b = map.getBounds();
+  const inView = (f) => { const [x, y] = f.geometry.coordinates[0][0]; return b.contains([y, x]); };
+  const feats = S.lots.filter((f) => ids.has(f.properties.lotissement_id) && inView(f));
+  L.geoJSON({ type: "FeatureCollection", features: feats }, {
+    style: (f) => lotStyle(f.properties),
+    onEachFeature: (f, layer) => { layer.bindPopup(lotPopup(f.properties)); layer.on("click", () => showInfo(f.properties.lotissement_id)); },
+  }).addTo(gDetail);
+}
+map.on("zoomend moveend", drawDetail);
+
+/* ---------- panneau info ---------- */
+const tag = (txt, cls) => `<span class="tag ${cls || ""}">${ANKO.esc(txt)}</span>`;
+function showInfo(id) {
+  const l = S.L.find((x) => x.id === id); if (!l) return;
+  S.sel = id;
+  const etatCls = l.etat === "approuvé" ? "ok" : l.etat === "annulé" ? "bad" : "warn";
+  const planOK = l.sur_carte && (l.plan_image || l.plan_tuiles);
+  $("info").innerHTML = `
+    <h3>${ANKO.esc(l.nom)}</h3>
+    <dl class="info-grid">
+      <dt>Source</dt><dd>${ANKO.esc(ANKO.sourceLabel(l.source))}${l.direction_secteur ? " · " + ANKO.esc(l.direction_secteur) : ""}</dd>
+      <dt>Localité</dt><dd>${ANKO.esc(l.localite)} <small>(${ANKO.esc(l.sous_prefecture)}, ${ANKO.esc(l.departement)}, ${ANKO.esc(l.region)})</small></dd>
+      <dt>Arrêté</dt><dd>${l.num_arrete ? ANKO.esc(l.num_arrete) + `<br><small>${ANKO.fmtDate(l.date_arrete)}</small>` + (l.arrete_pdf ? ` <a href="${ANKO.esc(l.arrete_pdf)}" target="_blank" rel="noopener">Voir l'arrêté</a>` : "") : "Aucun arrêté"}</dd>
+      <dt>État</dt><dd>${tag(l.etat, etatCls)}</dd>
+      <dt>Statut</dt><dd>${tag(l.statut === "normal" ? "Normal" : "En régularisation", l.statut === "normal" ? "" : "warn")}</dd>
+      <dt>Îlots</dt><dd>${l.nb_ilots}</dd><dt>Lots</dt><dd>${l.nb_lots}</dd>
+      <dt>Demandeur</dt><dd>${ANKO.esc(l.demandeur || "-")}</dd>
+      <dt>Caractéristiques</dt><dd style="font-weight:400">${[l.conforme ? "conforme" : "non conforme", l.habite ? "habité" : "non habité", l.milieu, l.conflit ? "en conflit" : "", l.actes ? "avec actes" : ""].filter(Boolean).join(" · ")}</dd>
+    </dl>
+    <div id="plan-zone">${planOK
+      ? `<div class="plan-ask" id="plan-ask"><b>Plan de lotissement géoréférencé</b><br>Voulez-vous voir le plan source de ce lotissement ?<div class="row"><button class="btn small green" id="plan-yes">Oui</button><button class="btn small ghost" id="plan-no">Non</button></div></div>`
+      : `<p class="empty" style="padding:.8rem 0 0">${l.sur_carte ? "Plan non disponible." : "Ce lotissement n'est pas encore sur la carte."}</p>`}</div>`;
+  if (planOK) {
+    $("plan-yes").onclick = () => { $("plan-ask").outerHTML = '<button class="btn" id="plan-btn" style="margin-top:.8rem">Voir le plan de lotissement</button>'; $("plan-btn").onclick = () => openPlan(l); openPlan(l); };
+    $("plan-no").onclick = () => { $("plan-ask").remove(); clearPlanOverlay(); };
+  }
+}
+
+function planLayer(l, opacity) {
+  if (l.plan_tuiles) return L.tileLayer(l.plan_tuiles, { maxZoom: 22, opacity });
+  return L.imageOverlay(l.plan_image, l.plan_bounds, { opacity });
+}
+function clearPlanOverlay() { if (S.planLayer) { map.removeLayer(S.planLayer); S.planLayer = null; } }
+
+let pmap = null;
+function openPlan(l) {
+  clearPlanOverlay();
+  S.planLayer = planLayer(l, .85).addTo(map);                       // plan visible aussi sur la carte
+  $("plan-title").textContent = "Plan de lotissement · " + l.nom;
+  $("plan-modal").classList.add("show");
+  if (pmap) pmap.remove();
+  pmap = L.map("plan-map", { maxZoom: 21 }).setView(l.centre, 17);
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 }).addTo(pmap);
+  const pl = planLayer(l, .85).addTo(pmap);
+  $("plan-op").oninput = (e) => { pl.setOpacity(+e.target.value); S.planLayer && S.planLayer.setOpacity(+e.target.value); };
+  const m = pmap;
+  setTimeout(() => { m.invalidateSize(); m.fitBounds(l.plan_bounds || [l.centre, l.centre], { maxZoom: 20 }); }, 120);
+}
+$("plan-close").onclick = () => $("plan-modal").classList.remove("show");
+$("plan-modal").onclick = (e) => e.target.id === "plan-modal" && $("plan-modal").classList.remove("show");
+document.addEventListener("keydown", (e) => e.key === "Escape" && $("plan-modal").classList.remove("show"));
+
+function select(id, fit) {
+  clearPlanOverlay();
+  if (S.hl) { map.removeLayer(S.hl); S.hl = null; }
+  if (!id) { S.sel = null; $("info").innerHTML = '<p class="empty">Sélectionnez un lotissement sur la carte, ou utilisez la recherche et les filtres.</p>'; return; }
+  showInfo(id);
+  const l = S.L.find((x) => x.id === id);
+  if (l.sur_carte) {
+    const f = S.lotiss.find((x) => x.properties.id === id);
+    if (f) S.hl = L.geoJSON(f, { style: { color: "#F77F00", weight: 4, fill: false }, interactive: false }).addTo(map);
+    if (fit) map.fitBounds(l.plan_bounds || [l.centre, l.centre], { maxZoom: 19, padding: [30, 30] });
+  }
+  if (innerWidth <= 860) $("side").classList.add("open");
+}
+
+function goToLot(lotissementId, ilot, lot) {
+  const l = S.L.find((x) => x.id === lotissementId); if (!l) return;
+  LEVELS.forEach(([k]) => S.f[k] = k === "lotissement" ? l.id : l[k]);
+  S.chips.clear(); renderFilters(); refresh(false); select(l.id, false);
+  const f = S.lots.find((x) => x.properties.lotissement_id === l.id && x.properties.ilot == ilot && x.properties.lot == lot);
+  if (!f) { map.fitBounds(l.plan_bounds || [l.centre, l.centre], { maxZoom: 19 }); return; }
+  const ring = f.geometry.coordinates[0], lats = ring.map((p) => p[1]), lngs = ring.map((p) => p[0]);
+  const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+  map.fitBounds(bounds, { maxZoom: 20, padding: [120, 120] });
+  L.popup().setLatLng([(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]).setContent(lotPopup(f.properties)).openOn(map);
+  L.geoJSON(f, { style: { color: "#0B2545", weight: 4, fill: false }, interactive: false }).addTo(gDetail);
+}
+
+/* ---------- recherche ---------- */
+const HINTS = { lotissement: "Nom, numéro ou localité du lotissement", lot: "Numéro de lot, ou « îlot-lot » (ex. 2-5)", ilot: "Numéro d'îlot", demandeur: "Nom d'un demandeur" };
+function search() {
+  const t = $("s-type").value, q = ANKO.norm($("s-q").value), out = $("results");
+  $("s-hint").textContent = HINTS[t];
+  if (q.length < 1) { out.innerHTML = ""; return; }
+  const inZone = new Set(geoRows().map((l) => l.id)), byId = (id) => S.L.find((l) => l.id === id);
+  let html = "";
+  if (t === "lotissement") {
+    html = geoRows().filter((l) => ANKO.norm(`${l.nom} ${l.id} ${l.localite} ${l.num_arrete}`).includes(q)).slice(0, 40)
+      .map((l) => `<button data-a="l" data-id="${l.id}">${ANKO.esc(l.nom)}<small>${ANKO.esc(l.localite)} · ${ANKO.esc(l.etat)}${l.sur_carte ? "" : " · hors carte"}</small></button>`).join("");
+  } else {
+    let m = S.lots.filter((f) => inZone.has(f.properties.lotissement_id));
+    if (t === "ilot") m = m.filter((f) => String(f.properties.ilot) === q);
+    else if (t === "demandeur") m = m.filter((f) => ANKO.norm(f.properties.demandeur).includes(q));
+    else { const mt = q.match(/^(\d+)\s*[-/ ]\s*(\d+)$/); m = mt ? m.filter((f) => f.properties.ilot == mt[1] && f.properties.lot == mt[2]) : m.filter((f) => String(f.properties.lot) === q); }
+    const seen = new Set();   // un seul resultat par ilot pour la recherche d'ilot
+    html = m.filter((f) => t !== "ilot" || !seen.has(f.properties.lotissement_id) && seen.add(f.properties.lotissement_id)).slice(0, 40).map((f) => {
+      const p = f.properties, l = byId(p.lotissement_id);
+      return `<button data-a="x" data-id="${p.lotissement_id}" data-i="${p.ilot}" data-l="${p.lot}">${t === "ilot" ? `Îlot ${p.ilot}` : `Îlot ${p.ilot} · Lot ${p.lot}`} – ${ANKO.esc(l.nom)}<small>${p.demandeur ? ANKO.esc(p.demandeur) + " · " : ""}${ANKO.esc(l.localite)}</small></button>`;
+    }).join("");
+  }
+  out.innerHTML = html || '<p class="empty" style="padding:.6rem">Aucun résultat.</p>';
+  out.querySelectorAll("button").forEach((b) => b.onclick = () => b.dataset.a === "l" ? (b.dataset.id && goToLotiss(b.dataset.id)) : goToLot(b.dataset.id, b.dataset.i, b.dataset.l));
+}
+function goToLotiss(id) {
+  const l = S.L.find((x) => x.id === id);
+  LEVELS.forEach(([k]) => S.f[k] = k === "lotissement" ? l.id : l[k]);
+  S.chips.clear(); renderFilters(); refresh(false); select(id, true);
+  if (!l.sur_carte) map.setView(l.centre, 13);
+}
+$("s-type").onchange = search; $("s-q").oninput = search;
+$("side-toggle").onclick = () => $("side").classList.toggle("open");
+
+/* ---------- demarrage ---------- */
+(async () => {
+  await ANKO.init("cartographie.html");
+  [S.L, S.lots, S.lotiss] = await Promise.all([
+    ANKO.load("data/lotissements.json"),
+    ANKO.load("data/geo/lots.geojson").then((g) => g.features).catch(() => []),
+    ANKO.load("data/geo/lotissements.geojson").then((g) => g.features).catch(() => []),
+  ]);
+  $("s-hint").textContent = HINTS.lotissement;
+  renderFilters(); refresh(true);
+  const q = new URLSearchParams(location.search);
+  if (q.get("lotissement")) {
+    if (q.get("lot")) goToLot(q.get("lotissement"), q.get("ilot"), q.get("lot")); else goToLotiss(q.get("lotissement"));
+  }
+})();
+</script>
+</body>
+</html>

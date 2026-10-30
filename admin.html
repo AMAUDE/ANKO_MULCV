@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Administration – ANKO</title>
+<link rel="icon" href="assets/logos/mulcv.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="site-header"></div>
+<div class="page-head"><div class="container"><h1>Espace administrateur</h1><p>Déposez des fichiers sans écrire de code : ils sont envoyés dans le dépôt GitHub et le site se met à jour en 1 à 2 minutes.</p></div></div>
+
+<main class="container" style="padding-top:1.4rem">
+  <div class="notice"><b>Sécurité :</b> créez un jeton « fine-grained » GitHub limité à ce seul dépôt avec la permission <i>Contents : Read and write</i>. Il reste uniquement dans cet onglet (effacé à la fermeture) et n'est envoyé qu'à api.github.com.</div>
+
+  <div class="panel">
+    <h2>1. Connexion au dépôt</h2>
+    <div class="form-grid">
+      <label>Propriétaire (compte ou organisation)<input id="g-owner" placeholder="ex. mon-compte"></label>
+      <label>Dépôt<input id="g-repo" placeholder="ex. anko"></label>
+      <label>Branche<input id="g-branch" value="main"></label>
+      <label>Jeton GitHub<input id="g-token" type="password" autocomplete="off" placeholder="github_pat_…"></label>
+    </div>
+    <p><button class="btn" id="g-test">Tester la connexion</button> <span id="g-state"></span></p>
+  </div>
+
+  <div class="panel">
+    <h2>2. Mettre à jour les données (Excel, CSV, JSON, GeoJSON)</h2>
+    <div class="form-grid">
+      <label>Que voulez-vous remplacer ?
+        <select id="d-target">
+          <option value="data/lotissements.json">Liste des lotissements (Excel/CSV/JSON)</option>
+          <option value="data/actes.json">Base des actes fonciers (Excel/CSV/JSON)</option>
+          <option value="data/geo/lots.geojson">Couche des lots (GeoJSON)</option>
+          <option value="data/geo/ilots.geojson">Couche des îlots (GeoJSON)</option>
+          <option value="data/geo/lotissements.geojson">Contours des lotissements (GeoJSON)</option>
+          <option value="data/config.json">Configuration (partenaires, directions, compteurs)</option>
+        </select></label>
+    </div>
+    <div class="drop" id="d-drop">Glissez le fichier ici ou cliquez pour choisir<br><small id="d-name">Aucun fichier</small><input type="file" id="d-file" hidden accept=".xlsx,.xls,.csv,.json,.geojson"></div>
+    <button class="btn" id="d-go">Envoyer sur GitHub</button>
+  </div>
+
+  <div class="panel">
+    <h2>3. Ajouter à la bibliothèque</h2>
+    <div class="form-grid">
+      <label>Direction<select id="b-src"></select></label>
+      <label>Type<select id="b-kind"><option value="num:pdf">Numérique – PDF</option><option value="num:word">Numérique – Word</option><option value="num:dwg">Numérique – DWG</option><option value="phy:documents">Physique – Document</option><option value="phy:cartes">Physique – Carte</option></select></label>
+      <label>Titre<input id="b-title"></label>
+      <label id="b-ref-l">Référence (physique)<input id="b-ref"></label>
+      <label id="b-loc-l">Localisation (physique)<input id="b-loc" placeholder="ex. Archives DTC - armoire 3"></label>
+      <label id="b-file-l">Fichier<input id="b-file" type="file"></label>
+    </div>
+    <p><button class="btn" id="b-go">Ajouter</button></p>
+  </div>
+
+  <div class="panel">
+    <h2>4. Ajouter une séance de travail</h2>
+    <div class="form-grid">
+      <label>Date<input id="s-date" type="date"></label>
+      <label>Titre<input id="s-title"></label>
+      <label>Lieu<input id="s-lieu"></label>
+      <label>Photos<input id="s-files" type="file" multiple accept="image/*"></label>
+    </div>
+    <label style="display:flex;flex-direction:column;gap:.25rem;font-weight:600;font-size:.9rem;margin-top:.8rem">Description<textarea id="s-desc" rows="3"></textarea></label>
+    <p><button class="btn" id="s-go">Publier la séance</button></p>
+  </div>
+
+  <div class="panel">
+    <h2>5. Déposer un autre fichier (arrêté, logo, plan…)</h2>
+    <div class="form-grid">
+      <label>Dossier de destination
+        <select id="f-dir"><option value="data/arretes">Arrêtés (nommer le fichier L0001.pdf)</option><option value="assets/logos">Logos</option><option value="data/plans">Plans de lotissement (image)</option><option value="assets/seances">Photos de séances</option></select></label>
+      <label>Fichier<input id="f-file" type="file"></label>
+    </div>
+    <p><button class="btn" id="f-go">Envoyer</button></p>
+    <small>Pour les plans GeoTIFF volumineux, utilisez plutôt <code>tools/geotiff_to_tiles.py</code> (voir README).</small>
+  </div>
+
+  <h2>Journal</h2>
+  <div class="log" id="log">Prêt.</div>
+</main>
+
+<div id="site-footer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const log = (m) => { $("log").textContent += "\n" + m; $("log").scrollTop = 1e9; };
+const BOOLS = ["conforme", "habite", "conflit", "actes", "sur_carte"], NUMS = ["nb_ilots", "nb_lots", "ilot", "lot", "superficie_m2"];
+
+/* champs memorises (jamais le jeton en localStorage) */
+["g-owner", "g-repo", "g-branch"].forEach((i) => { try { const v = localStorage.getItem("anko_" + i); if (v) $(i).value = v; } catch {} $(i).onchange = () => { try { localStorage.setItem("anko_" + i, $(i).value); } catch {} }; });
+try { $("g-token").value = sessionStorage.getItem("anko_tok") || ""; } catch {}
+$("g-token").onchange = () => { try { sessionStorage.setItem("anko_tok", $("g-token").value); } catch {} };
+
+/* ---------- API GitHub ---------- */
+const cfgGH = () => {
+  const o = $("g-owner").value.trim(), r = $("g-repo").value.trim(), t = $("g-token").value.trim();
+  if (!o || !r || !t) throw new Error("Renseignez propriétaire, dépôt et jeton (étape 1).");
+  return { o, r, t, b: $("g-branch").value.trim() || "main" };
+};
+async function gh(method, path, body) {
+  const c = cfgGH();
+  const url = `https://api.github.com/repos/${c.o}/${c.r}/contents/${path.split("/").map(encodeURIComponent).join("/")}` + (method === "GET" ? `?ref=${encodeURIComponent(c.b)}` : "");
+  const res = await fetch(url, { method, headers: { Authorization: "Bearer " + c.t, Accept: "application/vnd.github+json", "Content-Type": "application/json" }, body: body ? JSON.stringify({ ...body, branch: c.b }) : undefined });
+  if (res.status === 404 && method === "GET") return null;
+  if (!res.ok) throw new Error(`GitHub ${res.status} : ${(await res.json().catch(() => ({}))).message || res.statusText}`);
+  return res.json();
+}
+const b64Text = (s) => { const b = new TextEncoder().encode(s); let bin = ""; for (let i = 0; i < b.length; i += 8192) bin += String.fromCharCode(...b.subarray(i, i + 8192)); return btoa(bin); };
+const b64File = (f) => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result.split(",")[1]); r.onerror = ko; r.readAsDataURL(f); });
+async function put(path, contentB64, msg) {
+  const cur = await gh("GET", path);
+  await gh("PUT", path, { message: msg, content: contentB64, ...(cur?.sha ? { sha: cur.sha } : {}) });
+  log("✔ " + path);
+}
+async function readJson(path, fallback) {
+  const cur = await gh("GET", path);
+  if (!cur) return fallback;
+  const bin = atob(cur.content.replace(/\n/g, "")); const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+const safeName = (n) => n.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.\-]+/g, "_");
+const run = (btn, fn) => btn.onclick = async () => { btn.disabled = true; try { await fn(); log("Terminé. Le site sera à jour dans 1 à 2 minutes."); } catch (e) { log("✖ " + e.message); } btn.disabled = false; };
+
+$("g-test").onclick = async () => {
+  try { const c = cfgGH(); const r = await fetch(`https://api.github.com/repos/${c.o}/${c.r}`, { headers: { Authorization: "Bearer " + c.t } });
+    const j = await r.json(); $("g-state").textContent = r.ok ? (j.permissions?.push ? "✔ Connecté, écriture autorisée" : "⚠ Lecture seule : ajoutez la permission Contents (écriture)") : "✖ " + j.message;
+  } catch (e) { $("g-state").textContent = "✖ " + e.message; }
+};
+
+/* ---------- 2. donnees ---------- */
+let dFile = null;
+const pick = (f) => { dFile = f; $("d-name").textContent = f ? f.name : "Aucun fichier"; };
+$("d-drop").onclick = () => $("d-file").click();
+$("d-file").onchange = (e) => pick(e.target.files[0]);
+["dragover", "dragenter"].forEach((ev) => $("d-drop").addEventListener(ev, (e) => { e.preventDefault(); $("d-drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => $("d-drop").addEventListener(ev, (e) => { e.preventDefault(); $("d-drop").classList.remove("over"); }));
+$("d-drop").addEventListener("drop", (e) => pick(e.dataTransfer.files[0]));
+
+const toBool = (v) => ["oui", "yes", "true", "1", "vrai", "x"].includes(String(v).trim().toLowerCase());
+function clean(row) {
+  const o = {};
+  for (const [k0, v] of Object.entries(row)) {
+    const k = k0.trim().toLowerCase().replace(/\s+/g, "_"); if (v === "" || v == null) continue;
+    o[k] = BOOLS.includes(k) ? toBool(v) : NUMS.includes(k) ? Number(v) : v instanceof Date ? v.toISOString().slice(0, 10) : typeof v === "string" ? v.trim() : v;
+  }
+  return o;
+}
+run($("d-go"), async () => {
+  if (!dFile) throw new Error("Choisissez un fichier.");
+  const target = $("d-target").value, ext = dFile.name.split(".").pop().toLowerCase();
+  let text;
+  if (["xlsx", "xls", "csv"].includes(ext)) {
+    if (!/lotissements\.json|actes\.json/.test(target)) throw new Error("Excel/CSV : uniquement pour les lotissements et les actes.");
+    const wb = XLSX.read(await dFile.arrayBuffer(), { cellDates: true });
+    let rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }).map(clean);
+    log(`${rows.length} ligne(s) lue(s) dans « ${wb.SheetNames[0]} ».`);
+    if (target.endsWith("lotissements.json")) {   // on garde la geometrie deja connue (centre, plan, sur_carte…)
+      const old = await readJson(target, []), byId = Object.fromEntries(old.map((l) => [l.id, l]));
+      rows = rows.map((r) => ({ sur_carte: false, centre: null, plan_image: "", plan_bounds: null, plan_tuiles: "", ...byId[r.id], ...r }));
+      if (rows.some((r) => !r.id || !r.nom)) throw new Error("Chaque ligne doit avoir au minimum les colonnes « id » et « nom ».");
+    }
+    text = JSON.stringify(rows);
+  } else {
+    text = await dFile.text(); JSON.parse(text);   // verifie que le JSON est valide
+  }
+  await put(target, b64Text(text), `ANKO admin : mise à jour de ${target}`);
+});
+
+/* ---------- 3. bibliotheque ---------- */
+const syncKind = () => { const phy = $("b-kind").value.startsWith("phy"); $("b-file-l").hidden = phy; $("b-ref-l").hidden = !phy; $("b-loc-l").hidden = !phy; };
+$("b-kind").onchange = syncKind; syncKind();
+run($("b-go"), async () => {
+  const src = $("b-src").value, [mode, cat] = $("b-kind").value.split(":"), titre = $("b-title").value.trim();
+  if (!titre) throw new Error("Saisissez un titre.");
+  const bib = await readJson("data/bibliotheque.json", {});
+  bib[src] ??= { physique: { documents: [], cartes: [] }, numerique: { pdf: [], word: [], dwg: [] } };
+  if (mode === "phy") {
+    (bib[src].physique[cat] ??= []).push({ titre, reference: $("b-ref").value, annee: new Date().getFullYear(), localisation: $("b-loc").value });
+  } else {
+    const f = $("b-file").files[0]; if (!f) throw new Error("Choisissez un fichier.");
+    const path = `data/bibliotheque/${src}/${cat}/${safeName(f.name)}`;
+    await put(path, await b64File(f), `ANKO admin : ajout ${f.name}`);
+    (bib[src].numerique[cat] ??= []).push({ titre, fichier: path, taille: f.size, date: new Date().toISOString().slice(0, 10) });
+  }
+  await put("data/bibliotheque.json", b64Text(JSON.stringify(bib)), "ANKO admin : mise à jour du catalogue");
+});
+
+/* ---------- 4. seances ---------- */
+run($("s-go"), async () => {
+  const date = $("s-date").value, titre = $("s-title").value.trim();
+  if (!date || !titre) throw new Error("Date et titre obligatoires.");
+  const list = await readJson("data/seances.json", []), id = "S" + Date.now();
+  const images = [];
+  for (const f of $("s-files").files) {
+    const path = `assets/seances/${id}-${safeName(f.name)}`;
+    await put(path, await b64File(f), `ANKO admin : photo ${f.name}`); images.push({ src: path, legende: titre });
+  }
+  list.push({ id, date, titre, lieu: $("s-lieu").value, description: $("s-desc").value, images });
+  await put("data/seances.json", b64Text(JSON.stringify(list)), `ANKO admin : séance ${titre}`);
+});
+
+/* ---------- 5. fichier libre ---------- */
+run($("f-go"), async () => {
+  const f = $("f-file").files[0]; if (!f) throw new Error("Choisissez un fichier.");
+  await put(`${$("f-dir").value}/${safeName(f.name)}`, await b64File(f), `ANKO admin : ${f.name}`);
+});
+
+(async () => { const cfg = await ANKO.init("admin.html");
+  $("b-src").innerHTML = Object.entries(cfg.sources).map(([k, s]) => `<option value="${k}">${ANKO.esc(s.label)}</option>`).join(""); })();
+</script>
+</body>
+</html>
